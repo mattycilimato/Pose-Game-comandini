@@ -1,0 +1,80 @@
+using UnityEngine;
+
+public class PoseGameManager : MonoBehaviour
+{
+    public System.Action<int> OnPoseCompleted;
+    public System.Action OnSequenceCompleted;
+
+    [Header("Sequenza di pose")]
+    public PoseDefinition[] posesSequence;
+
+    [Header("Matching")]
+    public float matchThreshold = 0.10f;
+    public float holdTimeRequired = 1.5f;
+
+    [Header("Debug")]
+    public int currentPoseIndex = 0;
+    public float currentPoseMatchTime = 0f;
+    public float lastError = float.MaxValue;
+    public bool isCurrentPoseMatched = false;
+
+    PoseLandmarkSerializable[] currentPlayerPoseNormalized;
+
+    public PoseDefinition GetCurrentTargetPose()
+    {
+        if (posesSequence == null || posesSequence.Length == 0) return null;
+        if (currentPoseIndex < 0 || currentPoseIndex >= posesSequence.Length) return null;
+        return posesSequence[currentPoseIndex];
+    }
+    public void UpdateCurrentPlayerPose(PoseLandmarkSerializable[] rawLandmarks)
+    {
+        if (rawLandmarks == null || rawLandmarks.Length == 0) return;
+        currentPlayerPoseNormalized = PoseUtils.NormalizePose(rawLandmarks);
+    }
+
+    void Update()
+    {
+        if (posesSequence == null || posesSequence.Length == 0) return;
+        if (currentPoseIndex >= posesSequence.Length) return;
+
+        var target = posesSequence[currentPoseIndex];
+        if (target == null || target.normalizedLandmarks == null || target.normalizedLandmarks.Length == 0)
+            return;
+
+        if (currentPlayerPoseNormalized == null)
+        {
+            isCurrentPoseMatched = false;
+            currentPoseMatchTime = 0f;
+            lastError = float.MaxValue;
+            return;
+        }
+
+        lastError = PoseUtils.ComputePoseError(target.normalizedLandmarks, currentPlayerPoseNormalized);
+        isCurrentPoseMatched = lastError < matchThreshold;
+
+        if (isCurrentPoseMatched)
+        {
+            currentPoseMatchTime += Time.deltaTime;
+            if (currentPoseMatchTime >= holdTimeRequired)
+            {
+                if (currentPoseMatchTime >= holdTimeRequired)
+                {
+                    Debug.Log("Posa " + currentPoseIndex + " completata");
+                    OnPoseCompleted?.Invoke(currentPoseIndex);
+
+                    currentPoseIndex++;
+                    currentPoseMatchTime = 0f;
+
+                    if (currentPoseIndex >= posesSequence.Length)
+                    {
+                        OnSequenceCompleted?.Invoke();
+                    }
+                }
+            }
+        }
+        else
+        {
+            currentPoseMatchTime = 0f;
+        }
+    }
+}

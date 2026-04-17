@@ -1,0 +1,149 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e931ab1531fb079428a483ad3935a1d3, type: 3}
+  m_Name: TreePose
+  m_EditorClassIdentifier: 
+  poseName: TreePose
+  description: 
+  normalizedLandmarks:
+  - x: 0.16750003
+    y: -2.3419
+    z: -1.5441405
+    visibility: 1
+  - x: 0.21395014
+    y: -2.4424758
+    z: -1.3961214
+    visibility: 1
+  - x: 0.2399605
+    y: -2.4392467
+    z: -1.3963004
+    visibility: 1
+  - x: 0.26401937
+    y: -2.4371777
+    z: -1.3968972
+    visibility: 1
+  - x: 0.13724203
+    y: -2.452667
+    z: -1.3288283
+    visibility: 1
+  - x: 0.112599835
+    y: -2.4555502
+    z: -1.3292023
+    visibility: 1
+  - x: 0.088913426
+    y: -2.4584014
+    z: -1.3294631
+    visibility: 1
+  - x: 0.2923446
+    y: -2.3879173
+    z: -0.72905856
+    visibility: 1
+  - x: 0.075139455
+    y: -2.415723
+    z: -0.3899303
+    visibility: 1
+  - x: 0.2106997
+    y: -2.2057652
+    z: -1.309857
+    visibility: 1
+  - x: 0.12018959
+    y: -2.2264879
+    z: -1.2162592
+    visibility: 1
+  - x: 0.44022405
+    y: -1.8223649
+    z: -0.9080975
+    visibility: 1
+  - x: -0.07470664
+    y: -1.8482758
+    z: -0.051257312
+    visibility: 1
+  - x: 0.49727672
+    y: -2.568903
+    z: -1.711695
+    visibility: 1
+  - x: -0.13209744
+    y: -2.5894067
+    z: -0.20290533
+    visibility: 1
+  - x: 0.34409913
+    y: -3.3426852
+    z: -1.8129863
+    visibility: 1
+  - x: 0.1055275
+    y: -3.3236823
+    z: -0.25893125
+    visibility: 1
+  - x: 0.30233455
+    y: -3.559008
+    z: -2.0233908
+    visibility: 1
+  - x: 0.1775145
+    y: -3.5293107
+    z: -0.45597917
+    visibility: 1
+  - x: 0.2790875
+    y: -3.5559525
+    z: -1.9193324
+    visibility: 1
+  - x: 0.18508808
+    y: -3.5225232
+    z: -0.3595953
+    visibility: 1
+  - x: 0.27916428
+    y: -3.4854844
+    z: -1.7996451
+    visibility: 1
+  - x: 0.17130654
+    y: -3.4442885
+    z: -0.27266422
+    visibility: 1
+  - x: 0.17978035
+    y: 0.082124166
+    z: -0.32492837
+    visibility: 1
+  - x: -0.17978035
+    y: -0.082124166
+    z: 0.32492837
+    visibility: 1
+  - x: 0.03905
+    y: 1.1726242
+    z: -0.78367096
+    visibility: 1
+  - x: -0.6891978
+    y: 0.4206974
+    z: -1.2530861
+    visibility: 1
+  - x: 0.018456966
+    y: 2.187998
+    z: 0.56895167
+    visibility: 1
+  - x: -0.13276233
+    y: 1.1709435
+    z: 0.42017683
+    visibility: 1
+  - x: 0.016696898
+    y: 2.3709612
+    z: 0.65048796
+    visibility: 1
+  - x: -0.0079235835
+    y: 1.1872386
+    z: 0.5681194
+    visibility: 1
+  - x: -0.027129272
+    y: 2.6762168
+    z: -0.25397006
+    visibility: 1
+  - x: -0.1024215
+    y: 1.8748273
+    z: 0.04612906
+    visibility: 1

@@ -1,0 +1,149 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e931ab1531fb079428a483ad3935a1d3, type: 3}
+  m_Name: TPose
+  m_EditorClassIdentifier: 
+  poseName: TPose
+  description: 
+  normalizedLandmarks:
+  - x: 0.072831504
+    y: -3.434151
+    z: -3.1787107
+    visibility: 1
+  - x: 0.11522406
+    y: -3.525471
+    z: -3.0142603
+    visibility: 1
+  - x: 0.14532317
+    y: -3.5093899
+    z: -3.014495
+    visibility: 1
+  - x: 0.17529465
+    y: -3.493712
+    z: -3.0152526
+    visibility: 1
+  - x: 0.020495221
+    y: -3.5584953
+    z: -3.0274527
+    visibility: 1
+  - x: -0.01714155
+    y: -3.5620954
+    z: -3.027996
+    visibility: 1
+  - x: -0.053597476
+    y: -3.5632792
+    z: -3.0277836
+    visibility: 1
+  - x: 0.19979309
+    y: -3.382085
+    z: -2.0151987
+    visibility: 1
+  - x: -0.13391772
+    y: -3.4578786
+    z: -2.0621212
+    visibility: 1
+  - x: 0.11952176
+    y: -3.2184966
+    z: -2.7977679
+    visibility: 1
+  - x: -0.0074194097
+    y: -3.2500618
+    z: -2.8117275
+    visibility: 1
+  - x: 0.5013625
+    y: -2.500805
+    z: -1.4938673
+    visibility: 1
+  - x: -0.48769513
+    y: -2.5588768
+    z: -1.3582476
+    visibility: 1
+  - x: 1.162612
+    y: -2.489761
+    z: -1.4802438
+    visibility: 1
+  - x: -1.1210569
+    y: -2.6127324
+    z: -1.0690376
+    visibility: 1
+  - x: 1.7155093
+    y: -2.6110258
+    z: -2.403215
+    visibility: 1
+  - x: -1.6922183
+    y: -2.906242
+    z: -1.5984737
+    visibility: 1
+  - x: 1.8743278
+    y: -2.6814537
+    z: -2.5825117
+    visibility: 1
+  - x: -1.8857255
+    y: -2.9177032
+    z: -1.7607147
+    visibility: 1
+  - x: 1.882053
+    y: -2.7219641
+    z: -2.9017923
+    visibility: 1
+  - x: -1.8937637
+    y: -2.9964168
+    z: -2.0614321
+    visibility: 1
+  - x: 1.810518
+    y: -2.6673932
+    z: -2.5830429
+    visibility: 1
+  - x: -1.8205029
+    y: -2.9750118
+    z: -1.7748058
+    visibility: 1
+  - x: 0.25607815
+    y: 0.0029493629
+    z: -0.066927336
+    visibility: 1
+  - x: -0.25607783
+    y: -0.0029500106
+    z: 0.066927336
+    visibility: 1
+  - x: 0.13387302
+    y: 1.7464951
+    z: 0.45316163
+    visibility: 1
+  - x: -0.23915172
+    y: 1.7117344
+    z: 0.5945861
+    visibility: 1
+  - x: 0.04665073
+    y: 3.0294633
+    z: 3.0203364
+    visibility: 1
+  - x: -0.18477479
+    y: 2.9121037
+    z: 2.9155276
+    visibility: 1
+  - x: 0.021760944
+    y: 3.1397774
+    z: 3.2250884
+    visibility: 1
+  - x: -0.13917823
+    y: 2.9921932
+    z: 3.097704
+    visibility: 1
+  - x: 0.03290075
+    y: 3.6818633
+    z: 2.0971828
+    visibility: 1
+  - x: -0.19420958
+    y: 3.614925
+    z: 1.9774451
+    visibility: 1
