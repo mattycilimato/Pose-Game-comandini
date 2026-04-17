@@ -1001,6 +1001,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   poseRecorder: {fileID: 0}
   poseGameManager: {fileID: 2093691631}
+  smoothingFactor: 0.65
+  enableSmoothing: 1
+  poseLostTimeoutSeconds: 0.35
 --- !u!4 &1739294462
 Transform:
   m_ObjectHideFlags: 0
@@ -1315,6 +1318,9 @@ MonoBehaviour:
   matchThreshold: 1.1
   holdTimeRequired: 1
   autoAdvanceOnHold: 1
+  minLandmarkVisibility: 0.45
+  requiredComparedLandmarks: 8
+  useWeightedGameplayMatching: 1
   currentPoseIndex: 0
   currentPoseMatchTime: 0
   lastError: 3.4028235e+38

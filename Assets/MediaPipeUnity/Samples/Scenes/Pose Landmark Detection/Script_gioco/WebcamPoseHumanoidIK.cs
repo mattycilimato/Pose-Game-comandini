@@ -17,6 +17,8 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     [Header("Pose Space")]
     public Transform poseSpace;              // in genere la Camera usata per la webcam
     public float shoulderWidthMeters = 0.40f; // dopo NormalizePose: shoulderDist ~ 1
+    public bool autoCalibrateShoulderWidth = true;
+    public float shoulderWidthCalibrationMultiplier = 1f;
 
     [Header("Conversion")]
     public bool invertY = true;             // MediaPipe y cresce verso il basso => Unity verso l'alto
@@ -24,6 +26,12 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     public float ikWeight = 1f;            // peso IK (0..1)
     public float rotateSmoothing = 12f;   // smoothing rotazione
     public bool enableBodyYawRotation = false; // evita che l'avatar si giri automaticamente
+
+    [Header("IK Stabilita")]
+    [Range(0f, 1f)] public float minVisibilityForIK = 0.45f;
+    public bool holdLastValidTargets = true;
+    public float ikTargetSmoothing = 18f;
+    public float ikHintSmoothing = 22f;
 
     [Header("Controllo animazione base")]
     [Tooltip("Se attivo, congela la timeline del controller animazioni (così sparisce la camminata di default).")]
@@ -44,6 +52,7 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     private Vector3 _rightKneeHint;
 
     private Vector3 _shoulderSpanWorld; // per la rotazione yaw
+    private bool _targetsInitialized;
 
     private void Reset()
     {
@@ -61,6 +70,7 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     {
         // Serve se l'Animator viene inizializzato dopo di noi.
         ApplyAnimatorBaseControl();
+        TryAutoCalibrateShoulderWidth();
     }
 
     private void ApplyAnimatorBaseControl()
@@ -76,6 +86,20 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
             // Forza una valutazione immediata per non restare a "frame vecchi".
             animator.Update(0f);
         }
+    }
+
+    private void TryAutoCalibrateShoulderWidth()
+    {
+        if (!autoCalibrateShoulderWidth || animator == null || !animator.isHuman) return;
+
+        Transform leftUpperArm = animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+        Transform rightUpperArm = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+        if (leftUpperArm == null || rightUpperArm == null) return;
+
+        float distance = Vector3.Distance(leftUpperArm.position, rightUpperArm.position);
+        if (distance <= 0.0001f) return;
+
+        shoulderWidthMeters = distance * Mathf.Max(0.1f, shoulderWidthCalibrationMultiplier);
     }
 
     private void LateUpdate()
@@ -114,17 +138,41 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
         Vector3 rightShoulderPose = PoseToWorldOffset(lmRightShoulder);
         _shoulderSpanWorld = (rightShoulderPose - leftShoulderPose); // world-space offset vector
 
-        _leftHandTarget = hipAnchor.position + PoseToWorldOffset(lmLeftWrist);
-        _rightHandTarget = hipAnchor.position + PoseToWorldOffset(lmRightWrist);
+        Vector3 desiredLeftHandTarget = ResolveTargetFromLandmark(lmLeftWrist, _leftHandTarget);
+        Vector3 desiredRightHandTarget = ResolveTargetFromLandmark(lmRightWrist, _rightHandTarget);
+        Vector3 desiredLeftElbowHint = ResolveTargetFromLandmark(lmLeftElbow, _leftElbowHint);
+        Vector3 desiredRightElbowHint = ResolveTargetFromLandmark(lmRightElbow, _rightElbowHint);
+        Vector3 desiredLeftFootTarget = ResolveTargetFromLandmark(lmLeftAnkle, _leftFootTarget);
+        Vector3 desiredRightFootTarget = ResolveTargetFromLandmark(lmRightAnkle, _rightFootTarget);
+        Vector3 desiredLeftKneeHint = ResolveTargetFromLandmark(lmLeftKnee, _leftKneeHint);
+        Vector3 desiredRightKneeHint = ResolveTargetFromLandmark(lmRightKnee, _rightKneeHint);
 
-        _leftElbowHint = hipAnchor.position + PoseToWorldOffset(lmLeftElbow);
-        _rightElbowHint = hipAnchor.position + PoseToWorldOffset(lmRightElbow);
+        if (!_targetsInitialized)
+        {
+            _leftHandTarget = desiredLeftHandTarget;
+            _rightHandTarget = desiredRightHandTarget;
+            _leftElbowHint = desiredLeftElbowHint;
+            _rightElbowHint = desiredRightElbowHint;
+            _leftFootTarget = desiredLeftFootTarget;
+            _rightFootTarget = desiredRightFootTarget;
+            _leftKneeHint = desiredLeftKneeHint;
+            _rightKneeHint = desiredRightKneeHint;
+            _targetsInitialized = true;
+        }
+        else
+        {
+            float targetT = 1f - Mathf.Exp(-Mathf.Max(0f, ikTargetSmoothing) * Time.deltaTime);
+            float hintT = 1f - Mathf.Exp(-Mathf.Max(0f, ikHintSmoothing) * Time.deltaTime);
 
-        _leftFootTarget = hipAnchor.position + PoseToWorldOffset(lmLeftAnkle);
-        _rightFootTarget = hipAnchor.position + PoseToWorldOffset(lmRightAnkle);
-
-        _leftKneeHint = hipAnchor.position + PoseToWorldOffset(lmLeftKnee);
-        _rightKneeHint = hipAnchor.position + PoseToWorldOffset(lmRightKnee);
+            _leftHandTarget = Vector3.Lerp(_leftHandTarget, desiredLeftHandTarget, targetT);
+            _rightHandTarget = Vector3.Lerp(_rightHandTarget, desiredRightHandTarget, targetT);
+            _leftFootTarget = Vector3.Lerp(_leftFootTarget, desiredLeftFootTarget, targetT);
+            _rightFootTarget = Vector3.Lerp(_rightFootTarget, desiredRightFootTarget, targetT);
+            _leftElbowHint = Vector3.Lerp(_leftElbowHint, desiredLeftElbowHint, hintT);
+            _rightElbowHint = Vector3.Lerp(_rightElbowHint, desiredRightElbowHint, hintT);
+            _leftKneeHint = Vector3.Lerp(_leftKneeHint, desiredLeftKneeHint, hintT);
+            _rightKneeHint = Vector3.Lerp(_rightKneeHint, desiredRightKneeHint, hintT);
+        }
 
         // Rotazione yaw opzionale (solo orientamento sinistra/destra).
         if (enableBodyYawRotation)
@@ -171,6 +219,15 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
 
         Vector3 poseLocal = new Vector3(lm.x, y, z) * shoulderWidthMeters;
         return poseSpace.TransformVector(poseLocal);
+    }
+
+    private Vector3 ResolveTargetFromLandmark(PoseLandmarkSerializable lm, Vector3 currentValue)
+    {
+        bool hasValidVisibility = lm.visibility >= minVisibilityForIK;
+        if (!hasValidVisibility && holdLastValidTargets && _targetsInitialized)
+            return currentValue;
+
+        return hipAnchor.position + PoseToWorldOffset(lm);
     }
 
     private void RotateByShouldersYaw()

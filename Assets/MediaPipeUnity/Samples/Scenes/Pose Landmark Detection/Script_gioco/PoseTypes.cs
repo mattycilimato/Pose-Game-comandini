@@ -26,6 +26,36 @@ public static class PoseUtils
     public const int RIGHT_SHOULDER = 12;
     public const int LEFT_HIP = 23;
     public const int RIGHT_HIP = 24;
+    public const int LEFT_ELBOW = 13;
+    public const int RIGHT_ELBOW = 14;
+    public const int LEFT_WRIST = 15;
+    public const int RIGHT_WRIST = 16;
+    public const int LEFT_KNEE = 25;
+    public const int RIGHT_KNEE = 26;
+    public const int LEFT_ANKLE = 27;
+    public const int RIGHT_ANKLE = 28;
+
+    // Subset principale per il matching gameplay.
+    public static readonly int[] GameplayLandmarkIndices =
+    {
+        LEFT_SHOULDER, RIGHT_SHOULDER,
+        LEFT_ELBOW, RIGHT_ELBOW,
+        LEFT_WRIST, RIGHT_WRIST,
+        LEFT_HIP, RIGHT_HIP,
+        LEFT_KNEE, RIGHT_KNEE,
+        LEFT_ANKLE, RIGHT_ANKLE
+    };
+
+    // Pesi associati agli indici sopra (stessa lunghezza).
+    public static readonly float[] GameplayLandmarkWeights =
+    {
+        1.2f, 1.2f, // shoulders
+        1.3f, 1.3f, // elbows
+        1.5f, 1.5f, // wrists
+        1.2f, 1.2f, // hips
+        1.1f, 1.1f, // knees
+        1.0f, 1.0f  // ankles
+    };
 
     public static PoseLandmarkSerializable[] NormalizePose(PoseLandmarkSerializable[] input)
     {
@@ -57,17 +87,60 @@ public static class PoseUtils
         PoseLandmarkSerializable[] a,
         PoseLandmarkSerializable[] b)
     {
+        int compared;
+        return ComputePoseErrorWeighted(
+            a,
+            b,
+            null,
+            null,
+            0f,
+            out compared);
+    }
+
+    public static float ComputePoseErrorWeighted(
+        PoseLandmarkSerializable[] a,
+        PoseLandmarkSerializable[] b,
+        int[] indices,
+        float[] weights,
+        float minVisibility,
+        out int comparedCount)
+    {
+        comparedCount = 0;
+
         if (a == null || b == null) return float.MaxValue;
-        if (a.Length != b.Length) return float.MaxValue;
+        if (a.Length == 0 || b.Length == 0) return float.MaxValue;
 
-        float sum = 0f;
-        int n = a.Length;
+        float weightedDistanceSum = 0f;
+        float weightsSum = 0f;
 
-        for (int i = 0; i < n; i++)
+        if (indices == null || indices.Length == 0)
         {
-            sum += Vector3.Distance(a[i].ToVector3(), b[i].ToVector3());
+            int n = Mathf.Min(a.Length, b.Length);
+            for (int i = 0; i < n; i++)
+            {
+                if (a[i].visibility < minVisibility || b[i].visibility < minVisibility) continue;
+
+                weightedDistanceSum += Vector3.Distance(a[i].ToVector3(), b[i].ToVector3());
+                weightsSum += 1f;
+                comparedCount++;
+            }
+        }
+        else
+        {
+            for (int i = 0; i < indices.Length; i++)
+            {
+                int idx = indices[i];
+                if (idx < 0 || idx >= a.Length || idx >= b.Length) continue;
+                if (a[idx].visibility < minVisibility || b[idx].visibility < minVisibility) continue;
+
+                float w = (weights != null && i < weights.Length) ? Mathf.Max(0.0001f, weights[i]) : 1f;
+                weightedDistanceSum += Vector3.Distance(a[idx].ToVector3(), b[idx].ToVector3()) * w;
+                weightsSum += w;
+                comparedCount++;
+            }
         }
 
-        return sum / n;
+        if (weightsSum <= 0f || comparedCount == 0) return float.MaxValue;
+        return weightedDistanceSum / weightsSum;
     }
 }

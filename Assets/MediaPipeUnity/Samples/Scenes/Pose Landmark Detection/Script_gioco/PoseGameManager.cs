@@ -13,6 +13,9 @@ public class PoseGameManager : MonoBehaviour
     public float matchThreshold = 0.10f;
     public float holdTimeRequired = 1.5f;
     public bool autoAdvanceOnHold = true;
+    [Range(0f, 1f)] public float minLandmarkVisibility = 0.5f;
+    public int requiredComparedLandmarks = 8;
+    public bool useWeightedGameplayMatching = true;
 
     [Header("Debug")]
     public int currentPoseIndex = 0;
@@ -35,6 +38,14 @@ public class PoseGameManager : MonoBehaviour
         currentPlayerPoseNormalized = PoseUtils.NormalizePose(rawLandmarks);
     }
 
+    public void ClearCurrentPlayerPose()
+    {
+        currentPlayerPoseNormalized = null;
+        isCurrentPoseMatched = false;
+        currentPoseMatchTime = 0f;
+        lastError = float.MaxValue;
+    }
+
     void Update()
     {
         if (isGameOver) return;
@@ -53,8 +64,29 @@ public class PoseGameManager : MonoBehaviour
             return;
         }
 
-        lastError = PoseUtils.ComputePoseError(target.normalizedLandmarks, currentPlayerPoseNormalized);
-        isCurrentPoseMatched = lastError < matchThreshold;
+        int comparedCount;
+        if (useWeightedGameplayMatching)
+        {
+            lastError = PoseUtils.ComputePoseErrorWeighted(
+                target.normalizedLandmarks,
+                currentPlayerPoseNormalized,
+                PoseUtils.GameplayLandmarkIndices,
+                PoseUtils.GameplayLandmarkWeights,
+                minLandmarkVisibility,
+                out comparedCount);
+        }
+        else
+        {
+            lastError = PoseUtils.ComputePoseErrorWeighted(
+                target.normalizedLandmarks,
+                currentPlayerPoseNormalized,
+                null,
+                null,
+                minLandmarkVisibility,
+                out comparedCount);
+        }
+
+        isCurrentPoseMatched = comparedCount >= requiredComparedLandmarks && lastError < matchThreshold;
 
         if (isCurrentPoseMatched)
         {
