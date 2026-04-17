@@ -865,9 +865,53 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1969388817}
     - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: poseScaleX
+      value: 1.15
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: poseScaleY
+      value: 1.35
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: poseSource
       value: 
       objectReference: {fileID: 1739294461}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: armLateralBoost
+      value: 1.15
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: legLateralBoost
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: armVerticalBoost
+      value: 1.2
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: legVerticalBoost
+      value: 2.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: armHintSideOffset
+      value: 0.3
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: landmarkHintBlend
+      value: 0.3
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: minVisibilityForIK
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: maxArmReachMultiplier
+      value: 1.03
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: maxLegReachMultiplier
+      value: 1.06
+      objectReference: {fileID: 0}
     - target: {fileID: 1864260061999299088, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: m_ApplyRootMotion
       value: 0
