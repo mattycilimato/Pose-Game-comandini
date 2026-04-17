@@ -33,13 +33,23 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     [Tooltip("Boost aggiuntivo sulle braccia in laterale/verticale.")]
     public float armLateralBoost = 1.1f;
     public float armVerticalBoost = 1.15f;
+    [Tooltip("Moltiplicatore profondita' (asse Z) solo per le braccia. -1 inverte avanti/indietro.")]
+    public float armDepthMultiplier = -1f;
 
     [Header("Conversion")]
     public bool invertY = true;             // MediaPipe y cresce verso il basso => Unity verso l'alto
+    [Tooltip("Inverte l'asse X della posa (utile con webcam mirrorata).")]
+    public bool mirrorPoseX = true;
     public float zSign = -1f;              // spesso serve 1/-1 in base a come MediaPipe esprime la profondita'
     public float ikWeight = 1f;            // peso IK (0..1)
     public float rotateSmoothing = 12f;   // smoothing rotazione
-    public bool enableBodyYawRotation = false; // evita che l'avatar si giri automaticamente
+    public bool enableBodyYawRotation = true; // se attivo, il modello ruota con il torso del giocatore
+    [Tooltip("Se attivo, allo start il modello viene ruotato di 180° (di spalle).")]
+    public bool spawnBackFacing = true;
+    [Tooltip("Inverte la direzione dello yaw se la webcam e' mirrorata.")]
+    public bool invertBodyYaw = false;
+    [Tooltip("Soglia minima di ampiezza torso per aggiornare la rotazione.")]
+    public float minTorsoYawSignal = 0.02f;
 
     [Header("IK Stabilita")]
     [Range(0f, 1f)] public float minVisibilityForIK = 0.45f;
@@ -80,13 +90,14 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     private Vector3 _leftKneeHint;
     private Vector3 _rightKneeHint;
 
-    private Vector3 _shoulderSpanWorld; // per la rotazione yaw
+    private Vector3 _torsoRightWorld; // asse destro torso per la rotazione yaw
     private bool _targetsInitialized;
 
     private float _leftArmReach = 0.55f;
     private float _rightArmReach = 0.55f;
     private float _leftLegReach = 0.90f;
     private float _rightLegReach = 0.90f;
+    private bool _initialFacingApplied;
 
     private void Reset()
     {
@@ -104,8 +115,21 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     {
         // Serve se l'Animator viene inizializzato dopo di noi.
         ApplyAnimatorBaseControl();
+        ApplyInitialFacing();
         TryAutoCalibrateShoulderWidth();
         CacheLimbReachFromAvatar();
+    }
+
+    private void ApplyInitialFacing()
+    {
+        if (_initialFacingApplied) return;
+        if (!spawnBackFacing) return;
+
+        if (rootToRotate == null)
+            rootToRotate = transform;
+
+        rootToRotate.rotation = Quaternion.AngleAxis(180f, Vector3.up) * rootToRotate.rotation;
+        _initialFacingApplied = true;
     }
 
     private void ApplyAnimatorBaseControl()
@@ -187,16 +211,23 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
         PoseLandmarkSerializable lmRightElbow = poseSource.LatestNormalizedPose[14];
         PoseLandmarkSerializable lmLeftWrist = poseSource.LatestNormalizedPose[15];
         PoseLandmarkSerializable lmRightWrist = poseSource.LatestNormalizedPose[16];
+        PoseLandmarkSerializable lmLeftHip = poseSource.LatestNormalizedPose[23];
+        PoseLandmarkSerializable lmRightHip = poseSource.LatestNormalizedPose[24];
         PoseLandmarkSerializable lmLeftKnee = poseSource.LatestNormalizedPose[25];
         PoseLandmarkSerializable lmRightKnee = poseSource.LatestNormalizedPose[26];
         PoseLandmarkSerializable lmLeftAnkle = poseSource.LatestNormalizedPose[27];
         PoseLandmarkSerializable lmRightAnkle = poseSource.LatestNormalizedPose[28];
+
         Vector3 leftShoulderPose = PoseToWorldOffset(lmLeftShoulder, 1f, 1f, 1f);
         Vector3 rightShoulderPose = PoseToWorldOffset(lmRightShoulder, 1f, 1f, 1f);
-        _shoulderSpanWorld = (rightShoulderPose - leftShoulderPose); // world-space offset vector
+        Vector3 leftHipPose = PoseToWorldOffset(lmLeftHip, 1f, 1f, 1f);
+        Vector3 rightHipPose = PoseToWorldOffset(lmRightHip, 1f, 1f, 1f);
+        Vector3 shoulderSpan = rightShoulderPose - leftShoulderPose;
+        Vector3 hipSpan = rightHipPose - leftHipPose;
+        _torsoRightWorld = (shoulderSpan + hipSpan) * 0.5f;
 
-        Vector3 desiredLeftHandTarget = ResolveTargetFromLandmark(lmLeftWrist, _leftHandTarget, armLateralBoost, armVerticalBoost, 1f);
-        Vector3 desiredRightHandTarget = ResolveTargetFromLandmark(lmRightWrist, _rightHandTarget, armLateralBoost, armVerticalBoost, 1f);
+        Vector3 desiredLeftHandTarget = ResolveTargetFromLandmark(lmLeftWrist, _leftHandTarget, armLateralBoost, armVerticalBoost, armDepthMultiplier);
+        Vector3 desiredRightHandTarget = ResolveTargetFromLandmark(lmRightWrist, _rightHandTarget, armLateralBoost, armVerticalBoost, armDepthMultiplier);
         Vector3 desiredLeftFootTarget = ResolveTargetFromLandmark(lmLeftAnkle, _leftFootTarget, legLateralBoost, legVerticalBoost, 1f);
         Vector3 desiredRightFootTarget = ResolveTargetFromLandmark(lmRightAnkle, _rightFootTarget, legLateralBoost, legVerticalBoost, 1f);
 
@@ -304,11 +335,12 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     private Vector3 PoseToWorldOffset(PoseLandmarkSerializable lm, float localXMul, float localYMul, float localZMul)
     {
         // Pose: hip-centered, y in MediaPipe va "down" => invertY per Unity.
+        float x = mirrorPoseX ? -lm.x : lm.x;
         float y = invertY ? -lm.y : lm.y;
         float z = lm.z * zSign;
 
         Vector3 poseLocal = new Vector3(
-            lm.x * poseScaleX * localXMul,
+            x * poseScaleX * localXMul,
             y * poseScaleY * localYMul,
             z * poseScaleZ * localZMul) * (shoulderWidthMeters * Mathf.Max(0.01f, poseScale));
         return poseSpace.TransformVector(poseLocal);
@@ -369,7 +401,7 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
             + side * armHintSideOffset
             + forward * armHintForwardOffset;
 
-        Vector3 landmarkHint = ResolveTargetFromLandmark(elbowLandmark, currentHint, armLateralBoost, armVerticalBoost, 1f);
+        Vector3 landmarkHint = ResolveTargetFromLandmark(elbowLandmark, currentHint, armLateralBoost, armVerticalBoost, armDepthMultiplier);
         if (elbowLandmark.visibility < minVisibilityForIK) return proceduralHint;
 
         return Vector3.Lerp(proceduralHint, landmarkHint, landmarkHintBlend);
@@ -406,17 +438,31 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     private void RotateByShouldersYaw()
     {
         if (rootToRotate == null) return;
-        if (_shoulderSpanWorld.sqrMagnitude < 0.000001f) return;
+        if (_torsoRightWorld.sqrMagnitude < minTorsoYawSignal * minTorsoYawSignal) return;
 
-        Vector3 desiredRight = Vector3.ProjectOnPlane(_shoulderSpanWorld.normalized, Vector3.up);
+        Vector3 desiredRight = Vector3.ProjectOnPlane(_torsoRightWorld.normalized, Vector3.up);
         if (desiredRight.sqrMagnitude < 0.000001f) return;
         desiredRight.Normalize();
 
-        Vector3 desiredForward = Vector3.Cross(Vector3.up, desiredRight); // destra->avanti
+        if (invertBodyYaw)
+            desiredRight = -desiredRight;
 
-        // Se l'avatar è molto verticale, evita rotazioni errate.
-        if (desiredForward.sqrMagnitude < 0.000001f) return;
-        desiredForward.Normalize();
+        Vector3 forwardA = Vector3.Cross(desiredRight, Vector3.up).normalized; // destra->avanti
+        Vector3 forwardB = -forwardA;
+
+        if (forwardA.sqrMagnitude < 0.000001f) return;
+
+        Vector3 referenceForward = Vector3.ProjectOnPlane(rootToRotate.forward, Vector3.up);
+        if (referenceForward.sqrMagnitude < 0.000001f)
+            referenceForward = poseSpace != null ? Vector3.ProjectOnPlane(poseSpace.forward, Vector3.up) : Vector3.forward;
+        if (referenceForward.sqrMagnitude < 0.000001f)
+            referenceForward = Vector3.forward;
+        referenceForward.Normalize();
+
+        // Evita flip di 180°: sceglie il forward piu vicino a quello attuale.
+        Vector3 desiredForward = Vector3.Dot(referenceForward, forwardA) >= Vector3.Dot(referenceForward, forwardB)
+            ? forwardA
+            : forwardB;
 
         Quaternion targetRot = Quaternion.LookRotation(desiredForward, Vector3.up);
         rootToRotate.rotation = Quaternion.Slerp(rootToRotate.rotation, targetRot, rotateSmoothing * Time.deltaTime);

@@ -877,6 +877,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1739294461}
     - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: invertBodyYaw
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: armLateralBoost
       value: 1.15
       objectReference: {fileID: 0}
