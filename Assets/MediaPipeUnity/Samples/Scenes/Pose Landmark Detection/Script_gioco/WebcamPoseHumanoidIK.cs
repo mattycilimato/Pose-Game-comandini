@@ -36,6 +36,8 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
 
     [Header("Conversion")]
     public bool invertY = true;             // MediaPipe y cresce verso il basso => Unity verso l'alto
+    [Tooltip("Inverte lateralmente la posa (asse X) per compensare avatar ruotato di 180 gradi.")]
+    public bool invertX = false;
     public float zSign = -1f;              // spesso serve 1/-1 in base a come MediaPipe esprime la profondita'
     public float ikWeight = 1f;            // peso IK (0..1)
     public float rotateSmoothing = 12f;   // smoothing rotazione
@@ -366,11 +368,12 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     private Vector3 PoseToWorldOffset(PoseLandmarkSerializable lm, float localXMul, float localYMul, float localZMul)
     {
         // Pose: hip-centered, y in MediaPipe va "down" => invertY per Unity.
+        float x = invertX ? -lm.x : lm.x;
         float y = invertY ? -lm.y : lm.y;
         float z = lm.z * zSign;
 
         Vector3 poseLocal = new Vector3(
-            lm.x * poseScaleX * localXMul,
+            x * poseScaleX * localXMul,
             y * poseScaleY * localYMul,
             z * poseScaleZ * localZMul) * (shoulderWidthMeters * Mathf.Max(0.01f, poseScale));
         return poseSpace.TransformVector(poseLocal);

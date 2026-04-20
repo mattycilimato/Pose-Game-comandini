@@ -19,9 +19,28 @@ public class PoseLandmarkerAdapter : MonoBehaviour
     private PoseLandmarkSerializable[] _lastSmoothedRawPose;
     private float _lastPoseSeenTime = -999f;
     private bool _isPoseAvailable;
+    private readonly object _pendingPoseLock = new object();
+    private PoseLandmarkSerializable[] _pendingRawPose;
+    private bool _hasPendingPose;
 
     private void Update()
     {
+        PoseLandmarkSerializable[] pendingRawPose = null;
+        lock (_pendingPoseLock)
+        {
+            if (_hasPendingPose)
+            {
+                pendingRawPose = _pendingRawPose;
+                _pendingRawPose = null;
+                _hasPendingPose = false;
+            }
+        }
+
+        if (pendingRawPose != null)
+        {
+            ApplyPoseOnMainThread(pendingRawPose);
+        }
+
         if (!_isPoseAvailable) return;
         if (Time.time - _lastPoseSeenTime < poseLostTimeoutSeconds) return;
 
@@ -71,6 +90,15 @@ public class PoseLandmarkerAdapter : MonoBehaviour
             rawPose[i] = new PoseLandmarkSerializable(v, visibility);
         }
 
+        lock (_pendingPoseLock)
+        {
+            _pendingRawPose = rawPose;
+            _hasPendingPose = true;
+        }
+    }
+
+    private void ApplyPoseOnMainThread(PoseLandmarkSerializable[] rawPose)
+    {
         var poseToUse = enableSmoothing ? SmoothPose(rawPose) : rawPose;
 
         // Consistenza con il gioco: NormalizePose centra sulle anche e scala sulla distanza tra spalle.
