@@ -5,11 +5,12 @@ using Mediapipe.Tasks.Components.Containers;          // NormalizedLandmarks, No
 public class PoseLandmarkerAdapter : MonoBehaviour
 {
     [Header("Destinazioni")]
-    public PoseRecorder poseRecorder;        // scena editor pose (puù essere null in gioco)
-    public PoseGameManager poseGameManager;  // scena di gioco (puù essere null in editor)
+    public PoseRecorder poseRecorder;        // scena editor pose (puÔøΩ essere null in gioco)
+    public PoseGameManager poseGameManager;  // scena di gioco (puÔøΩ essere null in editor)
 
     [Header("Stato pose (ultimo frame)")]
     public PoseLandmarkSerializable[] LatestNormalizedPose { get; private set; }
+    public PoseLandmarkSerializable[] LatestRawPose { get; private set; }
 
     [Header("Stabilita tracking")]
     [Range(0f, 1f)] public float smoothingFactor = 0.65f;
@@ -84,7 +85,7 @@ public class PoseLandmarkerAdapter : MonoBehaviour
             var lm = list[i];                  // tipo NormalizedLandmark (API Tasks)
             var v = new Vector3(lm.x, lm.y, lm.z);
 
-            // In alcune versioni API visibility Ë nullable (float?).
+            // In alcune versioni API visibility ÔøΩ nullable (float?).
             float visibility = lm.visibility ?? 1f;
 
             rawPose[i] = new PoseLandmarkSerializable(v, visibility);
@@ -100,6 +101,7 @@ public class PoseLandmarkerAdapter : MonoBehaviour
     private void ApplyPoseOnMainThread(PoseLandmarkSerializable[] rawPose)
     {
         var poseToUse = enableSmoothing ? SmoothPose(rawPose) : rawPose;
+        LatestRawPose = poseToUse;
 
         // Consistenza con il gioco: NormalizePose centra sulle anche e scala sulla distanza tra spalle.
         LatestNormalizedPose = PoseUtils.NormalizePose(poseToUse);

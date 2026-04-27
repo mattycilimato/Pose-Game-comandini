@@ -4,13 +4,16 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+using System;
+using System.Linq;
+using Mediapipe.Unity.Sample;
 using UnityEngine;
 using UnityEngine.UI;
-using Mediapipe.Unity.Sample.UI;
 
 namespace Mediapipe.Unity.Sample.PoseLandmarkDetection.UI
 {
-  public class PoseLandmarkDetectionConfigWindow : ModalContents
+  // Minimal in-scene config panel without the Samples/UI modal system.
+  public class PoseLandmarkDetectionConfigWindow : MonoBehaviour
   {
     [SerializeField] private Dropdown _delegateInput;
     [SerializeField] private Dropdown _imageReadModeInput;
@@ -31,7 +34,11 @@ namespace Mediapipe.Unity.Sample.PoseLandmarkDetection.UI
       InitializeContents();
     }
 
-    public override void Exit() => GetModal().CloseAndResume(_isChanged);
+    // Optional hook for a close button.
+    public void Exit()
+    {
+      gameObject.SetActive(false);
+    }
 
     private void SwitchDelegate()
     {
@@ -165,6 +172,28 @@ namespace Mediapipe.Unity.Sample.PoseLandmarkDetection.UI
     {
       _outputSegmentationMasksInput.isOn = _config.OutputSegmentationMasks;
       _outputSegmentationMasksInput.onValueChanged.AddListener(delegate { ToggleOutputSegmentationMasks(); });
+    }
+
+    private static void InitializeDropdown<T>(Dropdown dropdown, string defaultLabel) where T : Enum
+    {
+      if (dropdown == null)
+      {
+        return;
+      }
+
+      var values = Enum.GetValues(typeof(T)).Cast<Enum>().ToArray();
+      var options = values.Select(v => v.GetDescription() ?? v.ToString()).ToList();
+
+      dropdown.ClearOptions();
+      dropdown.AddOptions(options);
+
+      var defaultIndex = Array.FindIndex(options.ToArray(), o => string.Equals(o, defaultLabel, StringComparison.Ordinal));
+      if (defaultIndex < 0)
+      {
+        defaultIndex = Array.FindIndex(values, v => string.Equals(v.ToString(), defaultLabel, StringComparison.Ordinal));
+      }
+      dropdown.value = Mathf.Clamp(defaultIndex, 0, options.Count - 1);
+      dropdown.RefreshShownValue();
     }
   }
 }

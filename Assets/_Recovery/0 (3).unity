@@ -1322,16 +1322,16 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1739294461}
     - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
+      propertyPath: warmupFrames
+      value: 20
+      objectReference: {fileID: 0}
+    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: footReachGain
       value: 1.55
       objectReference: {fileID: 0}
     - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: handReachGain
       value: 1.35
-      objectReference: {fileID: 0}
-    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
-      propertyPath: kneeBendBoost
-      value: 2.5
       objectReference: {fileID: 0}
     - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: armLateralBoost
@@ -1366,10 +1366,6 @@ PrefabInstance:
       value: 0.3
       objectReference: {fileID: 0}
     - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
-      propertyPath: kneeFlexActivation
-      value: 0.257
-      objectReference: {fileID: 0}
-    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: minVisibilityForIK
       value: 0.5
       objectReference: {fileID: 0}
@@ -1390,10 +1386,6 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
-      propertyPath: kneeFlexResponsePower
-      value: 1.37
-      objectReference: {fileID: 0}
-    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: maxArmReachMultiplier
       value: 1.03
       objectReference: {fileID: 0}
@@ -1402,16 +1394,8 @@ PrefabInstance:
       value: 1.06
       objectReference: {fileID: 0}
     - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
-      propertyPath: kneeFlexReachCompression
-      value: 0.351
-      objectReference: {fileID: 0}
-    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: minVisibilityForLowerBody
       value: 0.15
-      objectReference: {fileID: 0}
-    - target: {fileID: 1797073058550931480, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
-      propertyPath: kneeNeutralExtraActivation
-      value: 0.079
       objectReference: {fileID: 0}
     - target: {fileID: 1864260061999299088, guid: 2b9006590db2c1c4397f8189a50b6331, type: 3}
       propertyPath: m_ApplyRootMotion

@@ -13,6 +13,10 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     public Animator animator;
     public Transform hipAnchor;                 // punto di ancoraggio (es. pelvis / root)
     public Transform rootToRotate;            // dove applicare la rotazione "yaw" (opzionale)
+    [Tooltip("Ruota l'avatar di 180° in Y all'avvio (di spalle alla camera).")]
+    public bool spawnBackToCamera = true;
+    [Tooltip("Imposta automaticamente invertX quando l'avatar è di spalle.")]
+    public bool autoSetInvertXWhenBackToCamera = true;
 
     [Header("Pose Space")]
     public Transform poseSpace;              // in genere la Camera usata per la webcam
@@ -30,6 +34,8 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     [Tooltip("Boost aggiuntivo sulle gambe in laterale/verticale.")]
     public float legLateralBoost = 1.25f;
     public float legVerticalBoost = 1.6f;
+    [Tooltip("Quanto forzare la piegatura delle ginocchia: spinge il Knee Hint in avanti quando il ginocchio risulta flesso (es. inginocchiarsi).")]
+    public float kneeBendBoost = 2.0f;
     [Tooltip("Boost aggiuntivo sulle braccia in laterale/verticale.")]
     public float armLateralBoost = 1.1f;
     public float armVerticalBoost = 1.15f;
@@ -85,6 +91,12 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     public float legHintSideOffset = 0.08f;
     public float legHintForwardOffset = 0.10f;
     [Range(0f, 1f)] public float landmarkHintBlend = 0.35f;
+    [Tooltip("Riduce dinamicamente la distanza massima anca-piede quando il ginocchio è flesso (0=off, 1=massimo).")]
+    [Range(0f, 1f)] public float kneeFlexReachCompression = 0.45f;
+    [Tooltip("Soglia di flessione oltre la quale parte la compressione (evita ginocchia sempre piegate).")]
+    [Range(0f, 1f)] public float kneeFlexActivation = 0.35f;
+    [Tooltip("Curva di risposta della compressione: >1 la rende più selettiva.")]
+    public float kneeFlexResponsePower = 1.8f;
 
     [Header("Controllo animazione base")]
     [Tooltip("Se attivo, congela la timeline del controller animazioni (così sparisce la camminata di default).")]
@@ -92,6 +104,32 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
 
     [Tooltip("Disabilita il root motion, così l'avatar non “cammina” per via della root transform dell'animazione.")]
     public bool disableRootMotion = true;
+
+    [Header("Hip / Kneeling")]
+    [Tooltip("Permette all'avatar di abbassare il bacino seguendo le anche (può introdurre jitter prospettico se la camera si muove).")]
+    public bool enableHipHeightTracking = false;
+    [Tooltip("Quanto segue verticalmente le anche (0 = fermo, 1 = naturale, >1 più marcato).")]
+    public float hipHeightGain = 1.5f;
+    [Tooltip("Smoothing della posizione del bacino.")]
+    public float hipHeightSmoothing = 14f;
+    [Tooltip("Clamp massimo spostamento verticale (metri) rispetto alla calibrazione, per evitare salti).")]
+    public float maxHipHeightOffsetMeters = 0.6f;
+    [Tooltip("Ignora micro-oscillazioni del bacino in raw space.")]
+    public float hipRawDeadzone = 0.015f;
+    [Tooltip("Velocità massima verticale del bacino (m/s), limita i saltini quando ti avvicini alla camera.")]
+    public float maxHipVerticalSpeed = 0.9f;
+
+    [Header("Feet Landmarks")]
+    [Tooltip("Usa landmark piede (heel/foot-index) oltre all'ankle per stabilizzare i piedi, utile per inginocchiarsi.")]
+    public bool useFootLandmarks = true;
+    [Tooltip("Blend 0..1 tra ankle (0) e foot landmark selezionato (1) per X/Z. Y resta dall'ankle.")]
+    [Range(0f, 1f)] public float footPointBlend = 0.7f;
+    [Tooltip("Quanto forzare la Y a restare dell'ankle (1 = solo ankle Y).")]
+    [Range(0f, 1f)] public float footUseAnkleY = 1f;
+    [Tooltip("Limita il disallineamento avanti/indietro del target piede rispetto all'ankle (evita una gamba avanti e una indietro a startup).")]
+    public float maxFootForwardOffset = 0.08f;
+    [Tooltip("Frame iniziali di warmup: disattiva compressione ginocchia e transizione graduale dei target per evitare pose sporche all'avvio.")]
+    public int warmupFrames = 15;
 
     // Targets in world space (calcolati da LatestNormalizedPose)
     private Vector3 _leftHandTarget;
@@ -115,6 +153,13 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     private float _leftLegReach = 0.90f;
     private float _rightLegReach = 0.90f;
 
+    private bool _hipCalibrated;
+    private float _baselineHipYRaw;
+    private float _baselineShoulderDistRaw;
+    private Vector3 _hipAnchorBasePosition;
+    private Vector3 _lastHipTargetPos;
+    private int _warmupCounter;
+
     private void Reset()
     {
         animator = GetComponentInChildren<Animator>();
@@ -131,9 +176,27 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     {
         // Serve se l'Animator viene inizializzato dopo di noi.
         ApplyAnimatorBaseControl();
+        ApplyInitialOrientation();
         TryAutoCalibrateShoulderWidth();
         CacheLimbReachFromAvatar();
         _previousClampReachTargets = clampReachTargets;
+        if (hipAnchor != null)
+        {
+            _hipAnchorBasePosition = hipAnchor.position;
+            _lastHipTargetPos = hipAnchor.position;
+        }
+    }
+
+    private void ApplyInitialOrientation()
+    {
+        if (!spawnBackToCamera) return;
+        if (rootToRotate == null) rootToRotate = transform;
+
+        rootToRotate.rotation = Quaternion.Euler(0f, 180f, 0f) * rootToRotate.rotation;
+        if (autoSetInvertXWhenBackToCamera)
+        {
+            invertX = true;
+        }
     }
 
     private void ApplyAnimatorBaseControl()
@@ -229,6 +292,20 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
         PoseLandmarkSerializable lmRightKnee = poseSource.LatestNormalizedPose[26];
         PoseLandmarkSerializable lmLeftAnkle = poseSource.LatestNormalizedPose[27];
         PoseLandmarkSerializable lmRightAnkle = poseSource.LatestNormalizedPose[28];
+
+        PoseLandmarkSerializable lmLeftFootIndex = default;
+        PoseLandmarkSerializable lmRightFootIndex = default;
+        PoseLandmarkSerializable lmLeftHeel = default;
+        PoseLandmarkSerializable lmRightHeel = default;
+        if (poseSource.LatestNormalizedPose.Length > 32)
+        {
+            // MediaPipe Pose landmark indices:
+            // 29/30 = heel, 31/32 = foot index
+            lmLeftHeel = poseSource.LatestNormalizedPose[29];
+            lmRightHeel = poseSource.LatestNormalizedPose[30];
+            lmLeftFootIndex = poseSource.LatestNormalizedPose[31];
+            lmRightFootIndex = poseSource.LatestNormalizedPose[32];
+        }
         Vector3 leftShoulderPose = PoseToWorldOffset(lmLeftShoulder, 1f, 1f, 1f);
         Vector3 rightShoulderPose = PoseToWorldOffset(lmRightShoulder, 1f, 1f, 1f);
         Vector3 leftHipPose = PoseToWorldOffset(lmLeftHip, 1f, 1f, 1f);
@@ -237,20 +314,55 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
         Vector3 hipSpan = (rightHipPose - leftHipPose);
         _shoulderSpanWorld = Vector3.Lerp(hipSpan, shoulderSpan, shoulderYawBlend); // world-space offset vector
 
-        Vector3 desiredLeftHandTarget = ResolveTargetFromLandmark(lmLeftWrist, _leftHandTarget, armLateralBoost, armVerticalBoost, 1f, minVisibilityForIK);
-        Vector3 desiredRightHandTarget = ResolveTargetFromLandmark(lmRightWrist, _rightHandTarget, armLateralBoost, armVerticalBoost, 1f, minVisibilityForIK);
-        Vector3 desiredLeftFootTarget = ResolveTargetFromLandmark(lmLeftAnkle, _leftFootTarget, legLateralBoost, legVerticalBoost, 1f, minVisibilityForLowerBody);
-        Vector3 desiredRightFootTarget = ResolveTargetFromLandmark(lmRightAnkle, _rightFootTarget, legLateralBoost, legVerticalBoost, 1f, minVisibilityForLowerBody);
+        ApplyHipHeightFromRawPoseIfAvailable();
+        Vector3 stablePoseOrigin = GetStablePoseOriginWorld();
+
+        Vector3 desiredLeftHandTarget = ResolveTargetFromLandmark(stablePoseOrigin, lmLeftWrist, _leftHandTarget, armLateralBoost, armVerticalBoost, 1f, minVisibilityForIK);
+        Vector3 desiredRightHandTarget = ResolveTargetFromLandmark(stablePoseOrigin, lmRightWrist, _rightHandTarget, armLateralBoost, armVerticalBoost, 1f, minVisibilityForIK);
+
+        PoseLandmarkSerializable leftFootLm = SelectFootLandmark(lmLeftAnkle, lmLeftHeel, lmLeftFootIndex);
+        PoseLandmarkSerializable rightFootLm = SelectFootLandmark(lmRightAnkle, lmRightHeel, lmRightFootIndex);
+        Vector3 desiredLeftFootTarget = ResolveFootTarget(stablePoseOrigin, lmLeftAnkle, leftFootLm, _leftFootTarget, minVisibilityForLowerBody);
+        Vector3 desiredRightFootTarget = ResolveFootTarget(stablePoseOrigin, lmRightAnkle, rightFootLm, _rightFootTarget, minVisibilityForLowerBody);
+
+        float leftKneeFlex = EstimateKneeFlex01(lmLeftHip, lmLeftKnee, lmLeftAnkle);
+        float rightKneeFlex = EstimateKneeFlex01(lmRightHip, lmRightKnee, lmRightAnkle);
+        bool inWarmup = _warmupCounter < Mathf.Max(0, warmupFrames);
+        if (inWarmup)
+        {
+            _warmupCounter++;
+            leftKneeFlex = 0f;
+            rightKneeFlex = 0f;
+        }
+
+        float leftFlexActive = GetActiveKneeFlex(leftKneeFlex);
+        float rightFlexActive = GetActiveKneeFlex(rightKneeFlex);
+        float leftLegReachMul = Mathf.Max(0.35f, maxLegReachMultiplier * (1f - kneeFlexReachCompression * leftFlexActive));
+        float rightLegReachMul = Mathf.Max(0.35f, maxLegReachMultiplier * (1f - kneeFlexReachCompression * rightFlexActive));
 
         Vector3 leftShoulderAnchor = GetBonePosition(HumanBodyBones.LeftUpperArm, hipAnchor.position);
         Vector3 rightShoulderAnchor = GetBonePosition(HumanBodyBones.RightUpperArm, hipAnchor.position);
         Vector3 leftHipAnchor = GetBonePosition(HumanBodyBones.LeftUpperLeg, hipAnchor.position);
         Vector3 rightHipAnchor = GetBonePosition(HumanBodyBones.RightUpperLeg, hipAnchor.position);
+        Vector3 leftHandBone = GetBonePosition(HumanBodyBones.LeftHand, leftShoulderAnchor);
+        Vector3 rightHandBone = GetBonePosition(HumanBodyBones.RightHand, rightShoulderAnchor);
+        Vector3 leftFootBone = GetBonePosition(HumanBodyBones.LeftFoot, leftHipAnchor);
+        Vector3 rightFootBone = GetBonePosition(HumanBodyBones.RightFoot, rightHipAnchor);
 
         desiredLeftHandTarget = ScaleFromAnchor(desiredLeftHandTarget, leftShoulderAnchor, handReachGain);
         desiredRightHandTarget = ScaleFromAnchor(desiredRightHandTarget, rightShoulderAnchor, handReachGain);
         desiredLeftFootTarget = ScaleFromAnchor(desiredLeftFootTarget, leftHipAnchor, footReachGain);
         desiredRightFootTarget = ScaleFromAnchor(desiredRightFootTarget, rightHipAnchor, footReachGain);
+
+        if (inWarmup)
+        {
+            // During startup, blend from current rig pose to avoid immediate bent/offset stance.
+            const float warmupBlend = 0.2f;
+            desiredLeftHandTarget = Vector3.Lerp(leftHandBone, desiredLeftHandTarget, warmupBlend);
+            desiredRightHandTarget = Vector3.Lerp(rightHandBone, desiredRightHandTarget, warmupBlend);
+            desiredLeftFootTarget = Vector3.Lerp(leftFootBone, desiredLeftFootTarget, warmupBlend);
+            desiredRightFootTarget = Vector3.Lerp(rightFootBone, desiredRightFootTarget, warmupBlend);
+        }
 
         if (preventLimbBehindBody)
         {
@@ -264,8 +376,8 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
         {
             desiredLeftHandTarget = ClampReach(desiredLeftHandTarget, leftShoulderAnchor, _leftArmReach, maxArmReachMultiplier);
             desiredRightHandTarget = ClampReach(desiredRightHandTarget, rightShoulderAnchor, _rightArmReach, maxArmReachMultiplier);
-            desiredLeftFootTarget = ClampReach(desiredLeftFootTarget, leftHipAnchor, _leftLegReach, maxLegReachMultiplier);
-            desiredRightFootTarget = ClampReach(desiredRightFootTarget, rightHipAnchor, _rightLegReach, maxLegReachMultiplier);
+            desiredLeftFootTarget = ClampReach(desiredLeftFootTarget, leftHipAnchor, _leftLegReach, leftLegReachMul);
+            desiredRightFootTarget = ClampReach(desiredRightFootTarget, rightHipAnchor, _rightLegReach, rightLegReachMul);
         }
 
         // Hard safety clamp sempre attivo (previene freeze in pose impossibili).
@@ -291,13 +403,15 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
             leftHipAnchor,
             desiredLeftFootTarget,
             lmLeftKnee,
-            _leftKneeHint);
+            _leftKneeHint,
+            leftKneeFlex);
         Vector3 desiredRightKneeHint = ResolveLegHint(
             false,
             rightHipAnchor,
             desiredRightFootTarget,
             lmRightKnee,
-            _rightKneeHint);
+            _rightKneeHint,
+            rightKneeFlex);
 
         if (!_targetsInitialized)
         {
@@ -380,6 +494,7 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
     }
 
     private Vector3 ResolveTargetFromLandmark(
+        Vector3 originWorld,
         PoseLandmarkSerializable lm,
         Vector3 currentValue,
         float localXMul,
@@ -391,7 +506,95 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
         if (!hasValidVisibility && holdLastValidTargets && _targetsInitialized)
             return currentValue;
 
-        return hipAnchor.position + PoseToWorldOffset(lm, localXMul, localYMul, localZMul);
+        return originWorld + PoseToWorldOffset(lm, localXMul, localYMul, localZMul);
+    }
+
+    private Vector3 GetStablePoseOriginWorld()
+    {
+        if (!enableHipHeightTracking || !_hipCalibrated || hipAnchor == null)
+            return hipAnchor != null ? hipAnchor.position : transform.position;
+
+        // Important: targets should be computed from a stable origin (pre-hip-drop),
+        // otherwise feet move down together with hips and knees won't flex.
+        return _hipAnchorBasePosition;
+    }
+
+    private PoseLandmarkSerializable SelectFootLandmark(PoseLandmarkSerializable ankle, PoseLandmarkSerializable heel, PoseLandmarkSerializable footIndex)
+    {
+        if (!useFootLandmarks) return ankle;
+        PoseLandmarkSerializable best = ankle;
+        if (heel.visibility > best.visibility) best = heel;
+        if (footIndex.visibility > best.visibility) best = footIndex;
+        return best;
+    }
+
+    private Vector3 ResolveFootTarget(
+        Vector3 originWorld,
+        PoseLandmarkSerializable ankle,
+        PoseLandmarkSerializable footPointLm,
+        Vector3 currentValue,
+        float requiredVisibility)
+    {
+        bool ankleOk = ankle.visibility >= requiredVisibility;
+        bool pointOk = footPointLm.visibility >= requiredVisibility;
+        if (!ankleOk && !pointOk && holdLastValidTargets && _targetsInitialized)
+            return currentValue;
+
+        Vector3 ankleW = originWorld + PoseToWorldOffset(ankle, legLateralBoost, legVerticalBoost, 1f);
+        Vector3 pointW = originWorld + PoseToWorldOffset(footPointLm, legLateralBoost, legVerticalBoost, 1f);
+        Vector3 blended = Vector3.Lerp(ankleW, pointW, Mathf.Clamp01(footPointBlend));
+        blended.y = Mathf.Lerp(blended.y, ankleW.y, Mathf.Clamp01(footUseAnkleY));
+
+        // Limit forward/backward displacement from ankle to reduce leg split artifacts.
+        Transform basis = poseSpace != null ? poseSpace : transform;
+        Vector3 localDelta = basis.InverseTransformVector(blended - ankleW);
+        float zLimit = Mathf.Max(0f, maxFootForwardOffset);
+        localDelta.z = Mathf.Clamp(localDelta.z, -zLimit, zLimit);
+        blended = ankleW + basis.TransformVector(localDelta);
+        return blended;
+    }
+
+    private void ApplyHipHeightFromRawPoseIfAvailable()
+    {
+        if (!enableHipHeightTracking) return;
+        if (hipAnchor == null) return;
+        if (poseSource == null || poseSource.LatestRawPose == null) return;
+        var raw = poseSource.LatestRawPose;
+        if (raw.Length <= PoseUtils.RIGHT_HIP) return;
+
+        var leftHip = raw[PoseUtils.LEFT_HIP];
+        var rightHip = raw[PoseUtils.RIGHT_HIP];
+        var leftShoulder = raw[PoseUtils.LEFT_SHOULDER];
+        var rightShoulder = raw[PoseUtils.RIGHT_SHOULDER];
+
+        float hipY = (leftHip.y + rightHip.y) * 0.5f;
+        float shoulderDist = Vector2.Distance(new Vector2(leftShoulder.x, leftShoulder.y), new Vector2(rightShoulder.x, rightShoulder.y));
+
+        if (!_hipCalibrated)
+        {
+            _baselineHipYRaw = hipY;
+            _baselineShoulderDistRaw = Mathf.Max(0.0001f, shoulderDist);
+            _hipAnchorBasePosition = hipAnchor.position;
+            _hipCalibrated = true;
+        }
+
+        float metersPerRawUnit = shoulderWidthMeters / Mathf.Max(0.0001f, shoulderDist);
+        float deltaYRaw = hipY - _baselineHipYRaw; // positive when hips go down on screen
+        if (Mathf.Abs(deltaYRaw) < Mathf.Max(0f, hipRawDeadzone))
+        {
+            deltaYRaw = 0f;
+        }
+        float desiredOffsetMeters = -deltaYRaw * metersPerRawUnit * Mathf.Max(0f, hipHeightGain);
+        desiredOffsetMeters = Mathf.Clamp(desiredOffsetMeters, -Mathf.Abs(maxHipHeightOffsetMeters), Mathf.Abs(maxHipHeightOffsetMeters));
+
+        var up = poseSpace != null ? poseSpace.up : Vector3.up;
+        var unclampedTargetPos = _hipAnchorBasePosition + up * desiredOffsetMeters;
+        var maxStep = Mathf.Max(0.01f, maxHipVerticalSpeed) * Time.deltaTime;
+        var targetPos = Vector3.MoveTowards(_lastHipTargetPos, unclampedTargetPos, maxStep);
+        _lastHipTargetPos = targetPos;
+
+        float t = 1f - Mathf.Exp(-Mathf.Max(0.01f, hipHeightSmoothing) * Time.deltaTime);
+        hipAnchor.position = Vector3.Lerp(hipAnchor.position, targetPos, t);
     }
 
     private float GetAdaptiveSmoothing(Vector3 current, Vector3 target)
@@ -457,6 +660,7 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
             + forward * armHintForwardOffset;
 
         Vector3 landmarkHint = ResolveTargetFromLandmark(
+            GetStablePoseOriginWorld(),
             elbowLandmark,
             currentHint,
             armLateralBoost,
@@ -473,7 +677,8 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
         Vector3 hip,
         Vector3 footTarget,
         PoseLandmarkSerializable kneeLandmark,
-        Vector3 currentHint)
+        Vector3 currentHint,
+        float kneeFlex01)
     {
         Vector3 axis = footTarget - hip;
         if (axis.sqrMagnitude < 0.0001f) return currentHint;
@@ -485,12 +690,14 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
         if (isLeft) side = -side;
 
         Vector3 forward = Vector3.Cross(axis.normalized, side).normalized;
+        float bendMul = 1f + Mathf.Max(0f, kneeBendBoost) * Mathf.Clamp01(kneeFlex01);
         Vector3 proceduralHint = hip
             + axis * 0.5f
             + side * legHintSideOffset
-            + forward * legHintForwardOffset;
+            + forward * (legHintForwardOffset * bendMul);
 
         Vector3 landmarkHint = ResolveTargetFromLandmark(
+            GetStablePoseOriginWorld(),
             kneeLandmark,
             currentHint,
             legLateralBoost,
@@ -500,6 +707,29 @@ public class WebcamPoseHumanoidIK : MonoBehaviour
         if (kneeLandmark.visibility < minVisibilityForLowerBody) return proceduralHint;
 
         return Vector3.Lerp(proceduralHint, landmarkHint, landmarkHintBlend);
+    }
+
+    private float EstimateKneeFlex01(PoseLandmarkSerializable hipLm, PoseLandmarkSerializable kneeLm, PoseLandmarkSerializable ankleLm)
+    {
+        Vector3 originWorld = GetStablePoseOriginWorld();
+        Vector3 hipP = originWorld + PoseToWorldOffset(hipLm, 1f, 1f, 1f);
+        Vector3 kneeP = originWorld + PoseToWorldOffset(kneeLm, legLateralBoost, legVerticalBoost, 1f);
+        Vector3 ankleP = originWorld + PoseToWorldOffset(ankleLm, legLateralBoost, legVerticalBoost, 1f);
+
+        Vector3 thigh = kneeP - hipP;
+        Vector3 shin = ankleP - kneeP;
+        if (thigh.sqrMagnitude < 0.000001f || shin.sqrMagnitude < 0.000001f) return 0f;
+
+        float angle = Vector3.Angle(thigh, shin);
+        return Mathf.InverseLerp(170f, 95f, angle);
+    }
+
+    private float GetActiveKneeFlex(float rawFlex)
+    {
+        // Simple response: activate only above threshold, then smooth-step and shape with power.
+        float t = Mathf.InverseLerp(Mathf.Clamp01(kneeFlexActivation), 1f, Mathf.Clamp01(rawFlex));
+        t = t * t * (3f - 2f * t); // smoothstep
+        return Mathf.Pow(t, Mathf.Max(0.1f, kneeFlexResponsePower));
     }
 
     private void RotateByShouldersYaw()
