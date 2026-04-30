@@ -13,8 +13,7 @@ namespace Mediapipe.Unity.Sample.PoseLandmarkDetection
 {
   public class PoseLandmarkerRunner : VisionTaskApiRunner<PoseLandmarker>
   {
-        public PoseLandmarkerAdapter adapter;   // <--- AGGIUNGI QUESTA RIGA
-        [SerializeField] private PoseLandmarkerResultAnnotationController _poseLandmarkerResultAnnotationController;
+    [SerializeField] private PoseLandmarkerResultAnnotationController _poseLandmarkerResultAnnotationController;
 
     private Experimental.TextureFramePool _textureFramePool;
 
@@ -160,19 +159,11 @@ namespace Mediapipe.Unity.Sample.PoseLandmarkDetection
       }
     }
 
-   
-      private void OnPoseLandmarkDetectionOutput(PoseLandmarkerResult result, Image image, long timestamp)
-        {
-            _poseLandmarkerResultAnnotationController.DrawLater(result);
-            DisposeAllMasks(result);
-
-            // AGGIUNTO: manda il risultato al tuo adapter
-            if (adapter != null)
-            {
-                adapter.OnPoseResult(result);
-            }
-        }
-    
+    private void OnPoseLandmarkDetectionOutput(PoseLandmarkerResult result, Image image, long timestamp)
+    {
+      _poseLandmarkerResultAnnotationController.DrawLater(result);
+      DisposeAllMasks(result);
+    }
 
     private void DisposeAllMasks(PoseLandmarkerResult result)
     {

@@ -85,10 +85,6 @@ namespace Mediapipe.Unity.Sample
       ImageSourceProvider.Initialize(
         _appSettings.BuildWebCamSource(), _appSettings.BuildStaticImageSource(), _appSettings.BuildVideoSource());
       ImageSourceProvider.Switch(_appSettings.defaultImageSource);
-      if (ImageSourceProvider.ImageSource != null)
-      {
-        ImageSourceProvider.ImageSource.isHorizontallyFlipped = _appSettings.defaultWebCamHorizontallyFlipped;
-      }
 
       isFinished = true;
     }
