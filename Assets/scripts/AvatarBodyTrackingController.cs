@@ -7,6 +7,10 @@ using Mediapipe.Unity.Experimental;
 using Mediapipe.Unity.Sample;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.UI;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 using MPImage = Mediapipe.Image;
 
 public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
@@ -28,6 +32,23 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
   [SerializeField] private float rotationSmoothing = 12f;
   [SerializeField] private float rootMoveSmoothing = 8f;
   [SerializeField] private bool mirrorX = true;
+  [SerializeField] private bool keepFeetGrounded = true;
+  [SerializeField] private float feetGroundingWeight = 1f;
+  [SerializeField] private bool useGroundRaycast = true;
+  [SerializeField] private LayerMask groundLayers = ~0;
+  [SerializeField] private float groundRaycastDistance = 3f;
+  [SerializeField] private float groundFootOffset = 0.01f;
+  [SerializeField] private float footPitchOffset = -10f;
+  [SerializeField][Range(0f, 1f)] private float lowerBodyDepthInfluence = 0.25f;
+  [SerializeField][Range(0f, 1f)] private float torsoDepthInfluence = 0.35f;
+  [SerializeField][Range(0f, 1f)] private float torsoUprightBlend = 0.2f;
+  [Header("Squat Assist")]
+  [SerializeField] private bool enableSquatAssist = true;
+  [SerializeField] private float squatRootLowering = 0.2f;
+  [SerializeField][Range(0f, 1f)] private float squatDepthBoost = 1f;
+  [SerializeField] private float squatStartKneeAngle = 165f;
+  [SerializeField] private float squatFullKneeAngle = 95f;
+  [SerializeField] private float squatSmoothing = 10f;
 
   [Header("Pose Tracking")]
   [SerializeField] private Mediapipe.Tasks.Core.BaseOptions.Delegate inferenceDelegate = Mediapipe.Tasks.Core.BaseOptions.Delegate.CPU;
@@ -42,6 +63,11 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
   [SerializeField] private Color debugPointColor = Color.cyan;
   [SerializeField] private Color debugLineColor = Color.yellow;
 
+  [Header("Webcam Preview")]
+  [SerializeField] private bool showWebcamPreview = false;
+  [SerializeField] private KeyCode togglePreviewKey = KeyCode.V;
+  [SerializeField][Range(0f, 1f)] private float webcamPreviewOpacity = 1f;
+
   private readonly List<BoneBinding> _boneBindings = new()
   {
     new BoneBinding{ bone = HumanBodyBones.LeftUpperArm, fromLandmark = 11, toLandmark = 13 },
@@ -50,8 +76,10 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
     new BoneBinding{ bone = HumanBodyBones.RightLowerArm, fromLandmark = 14, toLandmark = 16 },
     new BoneBinding{ bone = HumanBodyBones.LeftUpperLeg, fromLandmark = 23, toLandmark = 25 },
     new BoneBinding{ bone = HumanBodyBones.LeftLowerLeg, fromLandmark = 25, toLandmark = 27 },
+    new BoneBinding{ bone = HumanBodyBones.LeftFoot, fromLandmark = 27, toLandmark = 31 },
     new BoneBinding{ bone = HumanBodyBones.RightUpperLeg, fromLandmark = 24, toLandmark = 26 },
     new BoneBinding{ bone = HumanBodyBones.RightLowerLeg, fromLandmark = 26, toLandmark = 28 },
+    new BoneBinding{ bone = HumanBodyBones.RightFoot, fromLandmark = 28, toLandmark = 32 },
     new BoneBinding{ bone = HumanBodyBones.Spine, fromLandmark = 23, toLandmark = 11 },
     new BoneBinding{ bone = HumanBodyBones.Chest, fromLandmark = 24, toLandmark = 12 },
     new BoneBinding{ bone = HumanBodyBones.Neck, fromLandmark = 11, toLandmark = 0 },
@@ -67,6 +95,14 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
   private Vector3 _initialRootPosition;
   private float _initialHipY;
   private float _currentRootYOffset;
+  private Transform _leftFootTransform;
+  private Transform _rightFootTransform;
+  private float _initialFootMinY;
+  private bool _hasFootReference;
+  private float _currentSquatAmount;
+  private ImageSource _imageSource;
+  private Canvas _previewCanvas;
+  private RawImage _previewRawImage;
 
   private static readonly int[] PoseConnectionPairs =
   {
@@ -95,6 +131,7 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
 
     _initialRootPosition = avatarRoot.position;
     CacheBones();
+    CacheFootReference();
     SetupDebugSkeleton();
 
     yield return base.Start();
@@ -102,6 +139,9 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
 
   private void LateUpdate()
   {
+    HandlePreviewToggleInput();
+    UpdateWebcamPreview();
+
     List<NormalizedLandmark> landmarksSnapshot;
     lock (_poseLock)
     {
@@ -139,6 +179,7 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
 
     taskApi = PoseLandmarker.CreateFromOptions(options, GpuManager.GpuResources);
     var imageSource = ImageSourceProvider.ImageSource;
+    _imageSource = imageSource;
 
     yield return imageSource.Play();
 
@@ -153,6 +194,7 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
     var imageProcessingOptions = new Mediapipe.Tasks.Vision.Core.ImageProcessingOptions(rotationDegrees: 0);
     var flipHorizontally = transformationOptions.flipHorizontally;
     var flipVertically = transformationOptions.flipVertically;
+    SetupWebcamPreviewIfNeeded();
 
     AsyncGPUReadbackRequest req = default;
     var waitUntilReqDone = new WaitUntil(() => req.done);
@@ -261,10 +303,31 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
       return;
     }
 
+    var squatAmount = ComputeSquatAmount(landmarks);
+    _currentSquatAmount = Mathf.Lerp(_currentSquatAmount, squatAmount, Time.deltaTime * squatSmoothing);
+
     var hipY = Average(landmarks[23].y, landmarks[24].y);
     var targetOffset = Mathf.Clamp((_initialHipY - hipY) * 1.2f, -0.35f, 0.35f);
     _currentRootYOffset = Mathf.Lerp(_currentRootYOffset, targetOffset, Time.deltaTime * rootMoveSmoothing);
     var target = _initialRootPosition + new Vector3(0f, _currentRootYOffset, 0f);
+    target.y -= _currentSquatAmount * Mathf.Max(0f, squatRootLowering);
+    var hasRaycastGrounding = false;
+
+    if (useGroundRaycast && _hasFootReference && TryGetGroundFootY(out var groundFootY))
+    {
+      var currentFootMinY = GetCurrentFootMinY();
+      var raycastCorrection = groundFootY - currentFootMinY;
+      target.y += raycastCorrection;
+      hasRaycastGrounding = true;
+    }
+
+    if (!hasRaycastGrounding && keepFeetGrounded && _hasFootReference)
+    {
+      var currentFootMinY = GetCurrentFootMinY();
+      var groundingCorrection = Mathf.Clamp(_initialFootMinY - currentFootMinY, -0.5f, 0.5f);
+      target.y += groundingCorrection * Mathf.Clamp01(feetGroundingWeight);
+    }
+
     avatarRoot.position = Vector3.Lerp(avatarRoot.position, target, Time.deltaTime * rootMoveSmoothing);
   }
 
@@ -286,6 +349,7 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
       var a = ToWorldVector(fromLm);
       var b = ToWorldVector(toLm);
       var directionWorld = (b - a);
+      directionWorld = FilterDirectionForBone(binding.bone, directionWorld);
       if (directionWorld.sqrMagnitude < 0.0001f)
       {
         continue;
@@ -303,6 +367,10 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
 
       var delta = Quaternion.FromToRotation(binding.initialAxisLocal, targetAxisLocal.normalized);
       var targetLocalRotation = delta * binding.initialLocalRotation;
+      if (binding.bone == HumanBodyBones.LeftFoot || binding.bone == HumanBodyBones.RightFoot)
+      {
+        targetLocalRotation *= Quaternion.Euler(footPitchOffset, 0f, 0f);
+      }
       binding.transform.localRotation = Quaternion.Slerp(binding.transform.localRotation, targetLocalRotation, Time.deltaTime * rotationSmoothing);
     }
   }
@@ -330,6 +398,252 @@ public class AvatarBodyTrackingController : VisionTaskApiRunner<PoseLandmarker>
 
     value = default;
     return false;
+  }
+
+  private Vector3 FilterDirectionForBone(HumanBodyBones bone, Vector3 directionWorld)
+  {
+    switch (bone)
+    {
+      case HumanBodyBones.LeftUpperLeg:
+      case HumanBodyBones.LeftLowerLeg:
+      case HumanBodyBones.RightUpperLeg:
+      case HumanBodyBones.RightLowerLeg:
+      case HumanBodyBones.LeftFoot:
+      case HumanBodyBones.RightFoot:
+        var dynamicLowerBodyDepth = Mathf.Lerp(
+          Mathf.Clamp01(lowerBodyDepthInfluence),
+          1f,
+          Mathf.Clamp01(_currentSquatAmount * Mathf.Clamp01(squatDepthBoost))
+        );
+        directionWorld.z *= dynamicLowerBodyDepth;
+        break;
+
+      case HumanBodyBones.Spine:
+      case HumanBodyBones.Chest:
+      case HumanBodyBones.Neck:
+      case HumanBodyBones.Head:
+        directionWorld.z *= Mathf.Clamp01(torsoDepthInfluence);
+        directionWorld = Vector3.Slerp(directionWorld, Vector3.up * directionWorld.magnitude, Mathf.Clamp01(torsoUprightBlend));
+        break;
+    }
+
+    return directionWorld;
+  }
+
+  private float ComputeSquatAmount(List<NormalizedLandmark> landmarks)
+  {
+    if (!enableSquatAssist || landmarks.Count < 29)
+    {
+      return 0f;
+    }
+
+    var left = ComputeKneeBendAmount(landmarks, 23, 25, 27);
+    var right = ComputeKneeBendAmount(landmarks, 24, 26, 28);
+    return (left + right) * 0.5f;
+  }
+
+  private float ComputeKneeBendAmount(List<NormalizedLandmark> landmarks, int hipIndex, int kneeIndex, int ankleIndex)
+  {
+    if (!TryGetLandmark(landmarks, hipIndex, out var hipLm) ||
+        !TryGetLandmark(landmarks, kneeIndex, out var kneeLm) ||
+        !TryGetLandmark(landmarks, ankleIndex, out var ankleLm))
+    {
+      return 0f;
+    }
+
+    var hip = ToWorldVector(hipLm);
+    var knee = ToWorldVector(kneeLm);
+    var ankle = ToWorldVector(ankleLm);
+
+    var upper = (hip - knee);
+    var lower = (ankle - knee);
+    if (upper.sqrMagnitude < 0.0001f || lower.sqrMagnitude < 0.0001f)
+    {
+      return 0f;
+    }
+
+    var kneeAngle = Vector3.Angle(upper, lower);
+    var denom = Mathf.Max(1f, squatStartKneeAngle - squatFullKneeAngle);
+    return Mathf.Clamp01((squatStartKneeAngle - kneeAngle) / denom);
+  }
+
+  private void CacheFootReference()
+  {
+    if (avatarAnimator == null || !avatarAnimator.isHuman)
+    {
+      return;
+    }
+
+    _leftFootTransform = avatarAnimator.GetBoneTransform(HumanBodyBones.LeftFoot);
+    _rightFootTransform = avatarAnimator.GetBoneTransform(HumanBodyBones.RightFoot);
+    if (_leftFootTransform == null || _rightFootTransform == null)
+    {
+      _hasFootReference = false;
+      return;
+    }
+
+    _initialFootMinY = Mathf.Min(_leftFootTransform.position.y, _rightFootTransform.position.y);
+    _hasFootReference = true;
+  }
+
+  private float GetCurrentFootMinY()
+  {
+    if (!_hasFootReference || _leftFootTransform == null || _rightFootTransform == null)
+    {
+      return avatarRoot != null ? avatarRoot.position.y : transform.position.y;
+    }
+
+    return Mathf.Min(_leftFootTransform.position.y, _rightFootTransform.position.y);
+  }
+
+  private bool TryGetGroundFootY(out float value)
+  {
+    value = 0f;
+    if (_leftFootTransform == null || _rightFootTransform == null)
+    {
+      return false;
+    }
+
+    var footMid = (_leftFootTransform.position + _rightFootTransform.position) * 0.5f;
+    var rayOrigin = footMid + Vector3.up * 1.5f;
+
+    if (!Physics.Raycast(rayOrigin, Vector3.down, out var hit, groundRaycastDistance, groundLayers, QueryTriggerInteraction.Ignore))
+    {
+      return false;
+    }
+
+    value = hit.point.y + groundFootOffset;
+    return true;
+  }
+
+  private void SetupWebcamPreviewIfNeeded()
+  {
+    if (_previewCanvas != null || !showWebcamPreview)
+    {
+      return;
+    }
+
+    var canvasGo = new GameObject("WebcamPreviewCanvas");
+    _previewCanvas = canvasGo.AddComponent<Canvas>();
+    _previewCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+    _previewCanvas.sortingOrder = -1000;
+    canvasGo.AddComponent<CanvasScaler>();
+    canvasGo.AddComponent<GraphicRaycaster>();
+
+    var rawImageGo = new GameObject("WebcamPreview");
+    rawImageGo.transform.SetParent(canvasGo.transform, false);
+    _previewRawImage = rawImageGo.AddComponent<RawImage>();
+    _previewRawImage.raycastTarget = false;
+    _previewRawImage.color = new Color(1f, 1f, 1f, Mathf.Clamp01(webcamPreviewOpacity));
+
+    var rect = _previewRawImage.rectTransform;
+    rect.anchorMin = Vector2.zero;
+    rect.anchorMax = Vector2.one;
+    rect.offsetMin = Vector2.zero;
+    rect.offsetMax = Vector2.zero;
+
+    SetWebcamPreviewVisible(showWebcamPreview);
+  }
+
+  private void HandlePreviewToggleInput()
+  {
+    if (IsTogglePreviewPressedThisFrame())
+    {
+      showWebcamPreview = !showWebcamPreview;
+      if (showWebcamPreview)
+      {
+        SetupWebcamPreviewIfNeeded();
+      }
+
+      SetWebcamPreviewVisible(showWebcamPreview);
+    }
+  }
+
+  private bool IsTogglePreviewPressedThisFrame()
+  {
+    if (togglePreviewKey == KeyCode.None)
+    {
+      return false;
+    }
+
+#if ENABLE_INPUT_SYSTEM
+    var keyboard = Keyboard.current;
+    var mappedKey = ToInputSystemKey(togglePreviewKey);
+    if (keyboard != null && mappedKey.HasValue)
+    {
+      return keyboard[mappedKey.Value].wasPressedThisFrame;
+    }
+#endif
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+    return Input.GetKeyDown(togglePreviewKey);
+#else
+    return false;
+#endif
+  }
+
+#if ENABLE_INPUT_SYSTEM
+  private static Key? ToInputSystemKey(KeyCode keyCode)
+  {
+    if (keyCode >= KeyCode.A && keyCode <= KeyCode.Z)
+    {
+      return (Key)((int)Key.A + ((int)keyCode - (int)KeyCode.A));
+    }
+
+    if (keyCode >= KeyCode.Alpha0 && keyCode <= KeyCode.Alpha9)
+    {
+      return (Key)((int)Key.Digit0 + ((int)keyCode - (int)KeyCode.Alpha0));
+    }
+
+    return keyCode switch
+    {
+      KeyCode.Space => Key.Space,
+      KeyCode.Tab => Key.Tab,
+      KeyCode.Escape => Key.Escape,
+      KeyCode.Return => Key.Enter,
+      KeyCode.Backspace => Key.Backspace,
+      KeyCode.LeftShift => Key.LeftShift,
+      KeyCode.RightShift => Key.RightShift,
+      KeyCode.LeftControl => Key.LeftCtrl,
+      KeyCode.RightControl => Key.RightCtrl,
+      KeyCode.LeftAlt => Key.LeftAlt,
+      KeyCode.RightAlt => Key.RightAlt,
+      _ => null,
+    };
+  }
+#endif
+
+  private void UpdateWebcamPreview()
+  {
+    if (showWebcamPreview && _previewCanvas == null)
+    {
+      SetupWebcamPreviewIfNeeded();
+    }
+
+    if (_previewCanvas != null && _previewCanvas.enabled != showWebcamPreview)
+    {
+      SetWebcamPreviewVisible(showWebcamPreview);
+    }
+
+    if (_previewRawImage == null || _imageSource == null)
+    {
+      return;
+    }
+
+    if (_previewRawImage.texture == null)
+    {
+      _previewRawImage.texture = _imageSource.GetCurrentTexture();
+    }
+
+    _previewRawImage.color = new Color(1f, 1f, 1f, Mathf.Clamp01(webcamPreviewOpacity));
+  }
+
+  private void SetWebcamPreviewVisible(bool isVisible)
+  {
+    if (_previewCanvas != null)
+    {
+      _previewCanvas.enabled = isVisible;
+    }
   }
 
   private void SetupDebugSkeleton()
